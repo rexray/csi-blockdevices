@@ -1,46 +1,23 @@
 package main
 
 import (
-	"errors"
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
+	"github.com/codedellemc/csi-blockdevices/services"
 	"github.com/codedellemc/gocsi"
 	"github.com/codedellemc/gocsi/csi"
 )
 
 const (
-	spName = "csi-blockdevices"
-
-	nodeEnvVar     = "BDPLUGIN_NODEONLY"
-	ctlrEnvVar     = "BDPLUGIN_CONTROLLERONLY"
-	debugEnvVar    = "BDPLUGIN_DEBUG"
-	blockDirEnvVar = "BDPLUGIN_DEVDIR"
-
-	defaultDevDir = "/dev/disk/csi-blockdevices"
-)
-
-var (
-	errServerStarted = errors.New(spName + ": the server has been started")
-	errServerStopped = errors.New(spName + ": the server has been stopped")
-
-	DevDir  = defaultDevDir
-	PrivDir = filepath.Join(DevDir, ".mounts")
-
-	CSIVersions = []*csi.Version{
-		&csi.Version{
-			Major: 0,
-			Minor: 1,
-			Patch: 0,
-		},
-	}
+	debugEnvVar = "BDPLUGIN_DEBUG"
+	nodeEnvVar  = "BDPLUGIN_NODEONLY"
+	ctlrEnvVar  = "BDPLUGIN_CONTROLLERONLY"
 )
 
 func main() {
@@ -51,21 +28,13 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	if dd := os.Getenv(blockDirEnvVar); dd != "" {
-		DevDir = dd
-		PrivDir = filepath.Join(DevDir, ".mounts")
-	}
-
-	s := &sp{name: spName}
+	s := &sp{}
 
 	go func() {
 		_ = <-c
 		if s.server != nil {
-			s.Lock()
-			defer s.Unlock()
-			log.Info("Shutting down server")
+			log.WithField("name", services.SpName).Info(".GracefulStop")
 			s.server.GracefulStop()
-			s.closed = true
 
 			// make sure sock file got cleaned up
 			proto, addr, _ := gocsi.GetCSIEndpoint()
@@ -89,46 +58,32 @@ func main() {
 	ctx := context.Background()
 
 	if err := s.Serve(ctx, l); err != nil {
-		s.Lock()
-		defer s.Unlock()
-		if !s.closed {
+		if err != grpc.ErrServerStopped {
 			log.WithError(err).Fatal("grpc failed")
 		}
 	}
 }
 
 type sp struct {
-	sync.Mutex
-	name   string
 	server *grpc.Server
-	closed bool
+	plugin *services.StoragePlugin
 }
 
 // ServiceProvider.Serve
 func (s *sp) Serve(ctx context.Context, li net.Listener) error {
-	log.WithField("name", s.name).Info(".Serve")
-	if err := func() error {
-		s.Lock()
-		defer s.Unlock()
-		if s.closed {
-			return errServerStopped
-		}
-		if s.server != nil {
-			return errServerStarted
-		}
-		s.server = grpc.NewServer(grpc.UnaryInterceptor(gocsi.ChainUnaryServer(
-			gocsi.ServerRequestIDInjector,
-			gocsi.NewServerRequestLogger(os.Stdout, os.Stderr),
-			gocsi.NewServerResponseLogger(os.Stdout, os.Stderr),
-			gocsi.NewServerRequestVersionValidator(CSIVersions),
-			gocsi.ServerRequestValidator)))
-		return nil
-	}(); err != nil {
-		return errServerStarted
-	}
+	log.WithField("name", services.SpName).Info(".Serve")
+	s.server = grpc.NewServer(grpc.UnaryInterceptor(gocsi.ChainUnaryServer(
+		gocsi.ServerRequestIDInjector,
+		gocsi.NewServerRequestLogger(os.Stdout, os.Stderr),
+		gocsi.NewServerResponseLogger(os.Stdout, os.Stderr),
+		gocsi.NewServerRequestVersionValidator(services.CSIVersions),
+		gocsi.ServerRequestValidator)))
 
-	// Always host the Indentity Service
-	csi.RegisterIdentityServer(s.server, s)
+	s.plugin = &services.StoragePlugin{}
+	s.plugin.Init()
+
+	// Always host the Identity Service
+	csi.RegisterIdentityServer(s.server, s.plugin)
 
 	_, nodeSvc := os.LookupEnv(nodeEnvVar)
 	_, ctrlSvc := os.LookupEnv(ctlrEnvVar)
@@ -140,21 +95,18 @@ func (s *sp) Serve(ctx context.Context, li net.Listener) error {
 
 	switch {
 	case nodeSvc:
-		csi.RegisterNodeServer(s.server, s)
+		csi.RegisterNodeServer(s.server, s.plugin)
 		log.Debug("Added Node Service")
 	case ctrlSvc:
-		csi.RegisterControllerServer(s.server, s)
+		csi.RegisterControllerServer(s.server, s.plugin)
 		log.Debug("Added Controller Service")
 	default:
-		csi.RegisterControllerServer(s.server, s)
+		csi.RegisterControllerServer(s.server, s.plugin)
 		log.Debug("Added Controller Service")
-		csi.RegisterNodeServer(s.server, s)
+		csi.RegisterNodeServer(s.server, s.plugin)
 		log.Debug("Added Node Service")
 	}
 
 	// start the grpc server
-	if err := s.server.Serve(li); err != grpc.ErrServerStopped {
-		return err
-	}
-	return errServerStopped
+	return s.server.Serve(li)
 }
