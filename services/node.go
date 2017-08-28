@@ -1,4 +1,4 @@
-package main
+package services
 
 import (
 	"os"
@@ -13,7 +13,7 @@ import (
 	"github.com/codedellemc/gocsi/csi"
 )
 
-func (s *sp) NodePublishVolume(
+func (s *StoragePlugin) NodePublishVolume(
 	ctx context.Context,
 	in *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 
@@ -30,7 +30,7 @@ func (s *sp) NodePublishVolume(
 			"name key missing from volumeID"), nil
 	}
 
-	dev, err := block.GetDeviceInDir(DevDir, name)
+	dev, err := block.GetDeviceInDir(s.DevDir, name)
 	if err != nil {
 		return gocsi.ErrNodePublishVolume(
 			csi.Error_NodePublishVolumeError_VOLUME_DOES_NOT_EXIST,
@@ -41,7 +41,7 @@ func (s *sp) NodePublishVolume(
 		fs := mv.GetFsType()
 		mf := mv.GetMountFlags()
 
-		return handleMountVolume(dev, target, fs, mf, ro, am)
+		return s.handleMountVolume(dev, target, fs, mf, ro, am)
 	}
 	if bv := vc.GetBlock(); bv != nil {
 		return gocsi.ErrNodePublishVolume(
@@ -57,7 +57,7 @@ func (s *sp) NodePublishVolume(
 	}, nil
 }
 
-func (s *sp) NodeUnpublishVolume(
+func (s *StoragePlugin) NodeUnpublishVolume(
 	ctx context.Context,
 	in *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 
@@ -71,7 +71,7 @@ func (s *sp) NodeUnpublishVolume(
 			"name key missing from volumeID"), nil
 	}
 
-	dev, err := block.GetDeviceInDir(DevDir, name)
+	dev, err := block.GetDeviceInDir(s.DevDir, name)
 	if err != nil {
 		return gocsi.ErrNodeUnpublishVolume(
 			csi.Error_NodeUnpublishVolumeError_VOLUME_DOES_NOT_EXIST,
@@ -111,7 +111,7 @@ func (s *sp) NodeUnpublishVolume(
 	}
 
 	// remove private mount if we can
-	privTgt := getPrivateMountPoint(dev)
+	privTgt := s.getPrivateMountPoint(dev)
 	if len(mnts) == 1 && mnts[0].Path == privTgt {
 		if err := block.Unmount(privTgt); err != nil {
 			return gocsi.ErrNodeUnpublishVolume(
@@ -130,7 +130,7 @@ func (s *sp) NodeUnpublishVolume(
 	}, nil
 }
 
-func (s *sp) GetNodeID(
+func (s *StoragePlugin) GetNodeID(
 	ctx context.Context,
 	in *csi.GetNodeIDRequest) (*csi.GetNodeIDResponse, error) {
 
@@ -143,7 +143,7 @@ func (s *sp) GetNodeID(
 	}, nil
 }
 
-func (s *sp) ProbeNode(
+func (s *StoragePlugin) ProbeNode(
 	ctx context.Context,
 	in *csi.ProbeNodeRequest) (*csi.ProbeNodeResponse, error) {
 
@@ -160,7 +160,7 @@ func (s *sp) ProbeNode(
 	}, nil
 }
 
-func (s *sp) NodeGetCapabilities(
+func (s *StoragePlugin) NodeGetCapabilities(
 	ctx context.Context,
 	in *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 
@@ -188,7 +188,7 @@ func mkdir(path string) (bool, error) {
 	return false, nil
 }
 
-func handleMountVolume(
+func (s *StoragePlugin) handleMountVolume(
 	dev *block.Device,
 	target string,
 	fs string,
@@ -197,14 +197,14 @@ func handleMountVolume(
 	am *csi.VolumeCapability_AccessMode) (*csi.NodePublishVolumeResponse, error) {
 
 	// Make sure PrivDir exists
-	if _, err := mkdir(PrivDir); err != nil {
+	if _, err := mkdir(s.privDir); err != nil {
 		return gocsi.ErrNodePublishVolume(
 			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
 			"Unable to create private mount dir"), nil
 	}
 
 	// Path to mount device to
-	privTgt := getPrivateMountPoint(dev)
+	privTgt := s.getPrivateMountPoint(dev)
 
 	f := log.Fields{
 		"name":         dev.Name,
@@ -349,6 +349,6 @@ func handleMountVolume(
 	}, nil
 }
 
-func getPrivateMountPoint(dev *block.Device) string {
-	return filepath.Join(PrivDir, dev.Name)
+func (s *StoragePlugin) getPrivateMountPoint(dev *block.Device) string {
+	return filepath.Join(s.privDir, dev.Name)
 }
