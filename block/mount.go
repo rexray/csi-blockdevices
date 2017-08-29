@@ -143,7 +143,12 @@ func FormatAndMount(
 // type, where kernel handles fs type for you. The mount 'options' is a list of options,
 // currently come from mount(8), e.g. "ro", "remount", "bind", etc. If no more option is
 // required, call Mount with an empty string list or nil.
-func Mount(source string, target string, fstype string, options []string) error {
+func Mount(
+	source string,
+	target string,
+	fstype string,
+	options []string) error {
+
 	// All Linux distros are expected to be shipped with a mount utility that an support bind mounts.
 	bind, bindRemountOpts := isBind(options)
 	if bind {
@@ -200,7 +205,12 @@ func isBind(options []string) (bool, []string) {
 }
 
 // doMount runs the mount command.
-func doMount(source string, target string, fstype string, options []string) error {
+func doMount(
+	source string,
+	target string,
+	fstype string,
+	options []string) error {
+
 	mountArgs := makeMountArgs(source, target, fstype, options)
 	args := strings.Join(mountArgs, " ")
 
@@ -222,17 +232,21 @@ func doMount(source string, target string, fstype string, options []string) erro
 }
 
 // makeMountArgs makes the arguments to the mount(8) command.
-func makeMountArgs(source, target, fstype string, options []string) []string {
+func makeMountArgs(
+	source, target, fstype string,
+	options []string) []string {
+
 	// Build mount command as follows:
 	//   mount [-t $fstype] [-o $options] [$source] $target
 
-	// Remove all empty strings from options
+	// Remove all duplicates and empty strings from options
 	opts := make([]string, 0)
 	for _, x := range options {
-		if x != "" {
+		if x != "" && !contains(opts, x) {
 			opts = append(opts, x)
 		}
 	}
+
 	mountArgs := []string{}
 	if len(fstype) > 0 {
 		mountArgs = append(mountArgs, "-t", fstype)
@@ -289,7 +303,10 @@ func GetDevMounts(dev string) ([]MountPoint, error) {
 
 // readProcMounts reads the given mountFilePath (normally /proc/mounts) and produces a hash
 // of the contents.  If the out argument is not nil, this fills it with MountPoint structs.
-func readProcMounts(mountFilePath string, out *[]MountPoint) (uint32, error) {
+func readProcMounts(
+	mountFilePath string,
+	out *[]MountPoint) (uint32, error) {
+
 	file, err := os.Open(mountFilePath)
 	if err != nil {
 		return 0, err
@@ -298,7 +315,10 @@ func readProcMounts(mountFilePath string, out *[]MountPoint) (uint32, error) {
 	return readProcMountsFrom(file, out)
 }
 
-func readProcMountsFrom(file io.Reader, out *[]MountPoint) (uint32, error) {
+func readProcMountsFrom(
+	file io.Reader,
+	out *[]MountPoint) (uint32, error) {
+
 	hash := fnv.New32a()
 	scanner := bufio.NewReader(file)
 	for {
@@ -313,7 +333,7 @@ func readProcMountsFrom(file io.Reader, out *[]MountPoint) (uint32, error) {
 
 		fmt.Fprintf(hash, "%s", line)
 
-		if out != nil && strings.HasPrefix(fields[0], "/dev") {
+		if out != nil {
 			mp := MountPoint{
 				Device: fields[0],
 				Path:   fields[1],
@@ -337,4 +357,13 @@ func readProcMountsFrom(file io.Reader, out *[]MountPoint) (uint32, error) {
 		}
 	}
 	return hash.Sum32(), nil
+}
+
+func contains(list []string, item string) bool {
+	for _, x := range list {
+		if x == item {
+			return true
+		}
+	}
+	return false
 }
