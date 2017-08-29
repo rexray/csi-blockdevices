@@ -50,11 +50,9 @@ func (s *StoragePlugin) NodePublishVolume(
 
 	}
 
-	return &csi.NodePublishVolumeResponse{
-		Reply: &csi.NodePublishVolumeResponse_Result_{
-			Result: &csi.NodePublishVolumeResponse_Result{},
-		},
-	}, nil
+	return gocsi.ErrNodePublishVolume(
+		csi.Error_NodePublishVolumeError_UNSUPPORTED_VOLUME_TYPE,
+		"No supported volume type received"), nil
 }
 
 func (s *StoragePlugin) NodeUnpublishVolume(
