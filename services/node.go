@@ -3,6 +3,7 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/net/context"
 
@@ -44,10 +45,21 @@ func (s *StoragePlugin) NodePublishVolume(
 		return s.handleMountVolume(dev, target, fs, mf, ro, am)
 	}
 	if bv := vc.GetBlock(); bv != nil {
-		return gocsi.ErrNodePublishVolume(
-			csi.Error_NodePublishVolumeError_UNSUPPORTED_VOLUME_TYPE,
-			"Block type not yet implemented"), nil
-
+		// Read-only is not supported for BlockVolume. Doing a read-only
+		// bind mount of the device to the target path does not prevent
+		// the underlying block device from being modified, so don't
+		// advertise a false sense of security
+		if ro {
+			return gocsi.ErrNodePublishVolume(
+				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+				"read only not supported for Block Volume"), nil
+		}
+		if am.GetMode() != csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER {
+			return gocsi.ErrNodePublishVolume(
+				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+				"unsupported access mode for BlockVolume"), nil
+		}
+		return s.handleBlockVolume(dev, target)
 	}
 
 	return gocsi.ErrNodePublishVolume(
@@ -76,50 +88,45 @@ func (s *StoragePlugin) NodeUnpublishVolume(
 			err.Error()), nil
 	}
 
-	// check to see if volume is really mounted at target
-	mnts, err := block.GetDevMounts(dev.RealDev)
+	mnts, err := block.GetMounts()
 	if err != nil {
 		return gocsi.ErrNodeUnpublishVolume(
 			csi.Error_NodeUnpublishVolumeError_UNMOUNT_ERROR,
 			err.Error()), nil
 	}
 
-	if len(mnts) > 0 {
-		// device is mounted somewhere. could be target, other targets,
-		// or private mount
-		var (
-			idx       int
-			m         block.MountPoint
-			unmounted = false
-		)
-		for idx, m = range mnts {
-			if m.Path == target {
-				if err := block.Unmount(target); err != nil {
-					return gocsi.ErrNodeUnpublishVolume(
-						csi.Error_NodeUnpublishVolumeError_UNMOUNT_ERROR,
-						err.Error()), nil
-				}
-				unmounted = true
-				break
+	privTgt := s.getPrivateMountPoint(dev)
+	mt := false
+	mp := false
+	bt := false
+	for _, m := range mnts {
+		if m.Device == dev.RealDev {
+			if m.Path == privTgt {
+				mp = true
+			} else if m.Path == target {
+				mt = true
 			}
 		}
-		if unmounted {
-			mnts = append(mnts[:idx], mnts[idx+1:]...)
+		if m.Device == "devtmpfs" && m.Path == target {
+			bt = true
 		}
 	}
 
-	// remove private mount if we can
-	privTgt := s.getPrivateMountPoint(dev)
-	if len(mnts) == 1 && mnts[0].Path == privTgt {
-		if err := block.Unmount(privTgt); err != nil {
+	if mt || bt {
+		if err := s.unmountTarget(target); err != nil {
 			return gocsi.ErrNodeUnpublishVolume(
 				csi.Error_NodeUnpublishVolumeError_UNMOUNT_ERROR,
 				err.Error()), nil
 		}
-		os.Remove(privTgt)
 	}
 
-	// TODO handle block volume type (links)
+	if mp {
+		if err := s.unmountPrivMount(dev, privTgt); err != nil {
+			return gocsi.ErrNodeUnpublishVolume(
+				csi.Error_NodeUnpublishVolumeError_UNMOUNT_ERROR,
+				err.Error()), nil
+		}
+	}
 
 	return &csi.NodeUnpublishVolumeResponse{
 		Reply: &csi.NodeUnpublishVolumeResponse_Result_{
@@ -194,11 +201,29 @@ func (s *StoragePlugin) handleMountVolume(
 	ro bool,
 	am *csi.VolumeCapability_AccessMode) (*csi.NodePublishVolumeResponse, error) {
 
-	// Make sure PrivDir exists
+	// Make sure privDir exists
 	if _, err := mkdir(s.privDir); err != nil {
 		return gocsi.ErrNodePublishVolume(
 			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
 			"Unable to create private mount dir"), nil
+	}
+
+	// Make sure target exists and is a directory
+	st, err := os.Stat(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return gocsi.ErrNodePublishVolume(
+				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+				"target_path does not exist"), nil
+		}
+		return gocsi.ErrNodePublishVolume(
+			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+			err.Error()), nil
+	}
+	if !st.IsDir() {
+		return gocsi.ErrNodePublishVolume(
+			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+			"target_path is not a directory"), nil
 	}
 
 	// Path to mount device to
@@ -349,4 +374,124 @@ func (s *StoragePlugin) handleMountVolume(
 
 func (s *StoragePlugin) getPrivateMountPoint(dev *block.Device) string {
 	return filepath.Join(s.privDir, dev.Name)
+}
+
+func (s *StoragePlugin) handleBlockVolume(
+	dev *block.Device,
+	target string) (*csi.NodePublishVolumeResponse, error) {
+
+	// Make sure target exists and is not a directory
+	st, err := os.Stat(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return gocsi.ErrNodePublishVolume(
+				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+				"target_path does not exist"), nil
+		}
+		return gocsi.ErrNodePublishVolume(
+			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+			err.Error()), nil
+	}
+	if st.IsDir() {
+		return gocsi.ErrNodePublishVolume(
+			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+			"target_path is a directory"), nil
+	}
+
+	f := log.Fields{
+		"name":       dev.Name,
+		"volumePath": dev.FullPath,
+		"device":     dev.RealDev,
+		"target":     target,
+	}
+
+	// Check if device is already mounted
+	mnts, err := block.GetDevMounts(dev.RealDev)
+	if err != nil {
+		return gocsi.ErrNodePublishVolume(
+			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+			"could not reliably determine existing mount status"), nil
+	}
+
+	if len(mnts) == 0 {
+		// Device isn't mounted anywhere, do the bind mount
+		log.WithFields(f).Debug("attempting mount to target")
+		if err := block.Mount(dev.FullPath, target, "", []string{"bind"}); err != nil {
+			return gocsi.ErrNodePublishVolume(
+				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+				err.Error()), nil
+		}
+	} else {
+		// Device is already mounted.
+		// If it's already mounted to our target, return
+		// If it's mounted to this driver's priv area, it's in use as a MountVolume
+		// If it's not one of the two choices above, it's either in use by
+		// another container, or the host node itself. Either way, we leave
+		// this up to the sysadmin and clustered filesystems to handle, and we
+		// publish the volume anyway.
+
+		for _, m := range mnts {
+			if m.Path == target {
+				// Existing mount satisfied requested
+				log.WithFields(f).Debug("mount already in place")
+				return &csi.NodePublishVolumeResponse{
+					Reply: &csi.NodePublishVolumeResponse_Result_{
+						Result: &csi.NodePublishVolumeResponse_Result{},
+					},
+				}, nil
+			}
+			if strings.HasPrefix(m.Path, s.privDir) {
+				// Device in use already as a MountVolume
+				log.WithFields(f).WithField("mount", m.Path).Error(
+					"device already in use as MountVolume")
+				return gocsi.ErrNodePublishVolume(
+					csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+					"volume already in use as a MountVolume"), nil
+			}
+		}
+
+		// We didn't return from previous loop, so do the mount
+		log.WithFields(f).Debug("attempting mount to target")
+		if err := block.Mount(dev.FullPath, target, "", []string{"bind"}); err != nil {
+			return gocsi.ErrNodePublishVolume(
+				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
+				err.Error()), nil
+		}
+	}
+
+	// Mount successful
+	return &csi.NodePublishVolumeResponse{
+		Reply: &csi.NodePublishVolumeResponse_Result_{
+			Result: &csi.NodePublishVolumeResponse_Result{},
+		},
+	}, nil
+}
+
+func (s *StoragePlugin) unmountTarget(
+	target string) error {
+
+	if err := block.Unmount(target); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *StoragePlugin) unmountPrivMount(
+	dev *block.Device,
+	target string) error {
+
+	mnts, err := block.GetDevMounts(dev.RealDev)
+	if err != nil {
+		return err
+	}
+
+	// remove private mount if we can
+	if len(mnts) == 1 && mnts[0].Path == target {
+		if err := block.Unmount(target); err != nil {
+			return err
+		}
+		os.Remove(target)
+	}
+	return nil
 }
