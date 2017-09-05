@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/net/context"
-
-	log "github.com/sirupsen/logrus"
-
-	"github.com/codedellemc/csi-blockdevices/block"
 	"github.com/codedellemc/gocsi"
 	"github.com/codedellemc/gocsi/csi"
+	"github.com/codedellemc/gocsi/mount"
+	log "github.com/sirupsen/logrus"
+	"golang.org/x/net/context"
+
+	"github.com/codedellemc/csi-blockdevices/block"
 )
 
 func (s *StoragePlugin) NodePublishVolume(
@@ -88,7 +88,7 @@ func (s *StoragePlugin) NodeUnpublishVolume(
 			err.Error()), nil
 	}
 
-	mnts, err := block.GetMounts()
+	mnts, err := mount.GetMounts()
 	if err != nil {
 		return gocsi.ErrNodeUnpublishVolume(
 			csi.Error_NodeUnpublishVolumeError_UNMOUNT_ERROR,
@@ -238,7 +238,7 @@ func (s *StoragePlugin) handleMountVolume(
 	}
 
 	// Check if device is already mounted
-	mnts, err := block.GetDevMounts(dev.RealDev)
+	mnts, err := mount.GetDevMounts(dev.RealDev)
 	if err != nil {
 		return gocsi.ErrNodePublishVolume(
 			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
@@ -279,13 +279,13 @@ func (s *StoragePlugin) handleMountVolume(
 		// If read-only access mode, we don't allow formatting
 		if am.GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY {
 			mf = append(mf, "ro")
-			if err := block.Mount(dev.FullPath, privTgt, fs, mf); err != nil {
+			if err := mount.Mount(dev.FullPath, privTgt, fs, mf...); err != nil {
 				return gocsi.ErrNodePublishVolume(
 					csi.Error_NodePublishVolumeError_MOUNT_ERROR,
 					err.Error()), nil
 			}
 		} else if am.GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER {
-			if err := block.FormatAndMount(dev.FullPath, privTgt, fs, mf); err != nil {
+			if err := mount.FormatAndMount(dev.FullPath, privTgt, fs, mf...); err != nil {
 				return gocsi.ErrNodePublishVolume(
 					csi.Error_NodePublishVolumeError_MOUNT_ERROR,
 					err.Error()), nil
@@ -354,7 +354,7 @@ func (s *StoragePlugin) handleMountVolume(
 		mf = append(mf, "ro")
 	}
 	mf = append(mf, "bind")
-	if err := block.Mount(privTgt, target, "", mf); err != nil {
+	if err := mount.Mount(privTgt, target, "", mf...); err != nil {
 		//if err := SafeUnmnt(privTgt); err != nil {
 		//	log.WithFields(f).WithError(err).Error(
 		//		"Unable to umount from private dir")
@@ -406,7 +406,7 @@ func (s *StoragePlugin) handleBlockVolume(
 	}
 
 	// Check if device is already mounted
-	mnts, err := block.GetDevMounts(dev.RealDev)
+	mnts, err := mount.GetDevMounts(dev.RealDev)
 	if err != nil {
 		return gocsi.ErrNodePublishVolume(
 			csi.Error_NodePublishVolumeError_MOUNT_ERROR,
@@ -416,7 +416,7 @@ func (s *StoragePlugin) handleBlockVolume(
 	if len(mnts) == 0 {
 		// Device isn't mounted anywhere, do the bind mount
 		log.WithFields(f).Debug("attempting mount to target")
-		if err := block.Mount(dev.FullPath, target, "", []string{"bind"}); err != nil {
+		if err := mount.BindMount(dev.FullPath, target, ""); err != nil {
 			return gocsi.ErrNodePublishVolume(
 				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
 				err.Error()), nil
@@ -452,7 +452,7 @@ func (s *StoragePlugin) handleBlockVolume(
 
 		// We didn't return from previous loop, so do the mount
 		log.WithFields(f).Debug("attempting mount to target")
-		if err := block.Mount(dev.FullPath, target, "", []string{"bind"}); err != nil {
+		if err := mount.BindMount(dev.FullPath, target, ""); err != nil {
 			return gocsi.ErrNodePublishVolume(
 				csi.Error_NodePublishVolumeError_MOUNT_ERROR,
 				err.Error()), nil
@@ -470,7 +470,7 @@ func (s *StoragePlugin) handleBlockVolume(
 func (s *StoragePlugin) unmountTarget(
 	target string) error {
 
-	if err := block.Unmount(target); err != nil {
+	if err := mount.Unmount(target); err != nil {
 		return err
 	}
 
@@ -481,16 +481,18 @@ func (s *StoragePlugin) unmountPrivMount(
 	dev *block.Device,
 	target string) error {
 
-	mnts, err := block.GetDevMounts(dev.RealDev)
+	mnts, err := mount.GetDevMounts(dev.RealDev)
 	if err != nil {
 		return err
 	}
 
 	// remove private mount if we can
 	if len(mnts) == 1 && mnts[0].Path == target {
-		if err := block.Unmount(target); err != nil {
+		if err := mount.Unmount(target); err != nil {
 			return err
 		}
+		log.WithField("directory", target).Debug(
+			"removing directory")
 		os.Remove(target)
 	}
 	return nil
