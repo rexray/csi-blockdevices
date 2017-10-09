@@ -93,32 +93,32 @@ Here are some sample commands:
 
 ```sh
 $ csc gets
-0.1.0
+0.0.0
 $ csc getp
 csi-blockdevices	0.1.0
 $ mkdir /dev/disk/csi-blockdevices
 $ cd /dev/disk/csi-blockdevices
-$ dd if=/dev/zero of=test.im bs=1024 count=102400 #makes 100MiB disk image
+$ dd if=/dev/zero of=test.img bs=1024 count=102400 #makes 100MiB disk image
 $ losetup /dev/loop0 test.img #attaches disk image to /dev/loop0
 $ ln -s /dev/loop0 # creates symlink named loop0 -> /dev/loop0
 $ csc ls
 name=loop0
 $ mkdir /mnt/test
 $ mkdir /mnt/test2
-$ csc mnt -mode 1 -t xfs -targetPath /mnt/test name=loop0
+$ csc mnt -mode 1 -t xfs -targetPath /mnt/test id=loop0
 $ cat /proc/mounts | grep loop
 /dev/loop0 /dev/disk/csi-blockdevices/.mounts/loop0 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
-$ csc mnt -mode 1 -t xfs -targetPath /mnt/test2 name=loop0
+$ csc mnt -mode 1 -t xfs -targetPath /mnt/test2 id=loop0
 $ cat /proc/mounts | grep loop
 /dev/loop0 /dev/disk/csi-blockdevices/.mounts/loop0 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test2 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
-$ csc umount -targetPath /mnt/test name=loop0
+$ csc umount -targetPath /mnt/test id=loop0
 $ cat /proc/mounts | grep loop
 /dev/loop0 /dev/disk/csi-blockdevices/.mounts/loop0 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test2 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
-$ csc umount -targetPath /mnt/test2 name=loop0
+$ csc umount -targetPath /mnt/test2 id=loop0
 $ cat /proc/mounts | grep loop
 $
 ```
