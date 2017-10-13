@@ -144,11 +144,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// if a service is specified then add it to the context
-	// as gRPC metadata
-	if args.service != "" {
-		args.grpcMetadata.vals["csi.service"] = args.service
-	}
+	// If there is metadata then send it.
 	if v := args.grpcMetadata.vals; len(v) > 0 {
 		ctx = metadata.NewContext(ctx, metadata.New(v))
 	}
@@ -274,7 +270,6 @@ Use the -? flag with an RPC for additional help.
 //                               Global Flags                                //
 ///////////////////////////////////////////////////////////////////////////////
 var args struct {
-	service      string
 	endpoint     string
 	format       string
 	help         bool
@@ -294,16 +289,10 @@ func flagsGlobal(
 		os.Getenv("CSI_ENDPOINT"),
 		"The endpoint address")
 
-	fs.StringVar(
-		&args.service,
-		"service",
-		"",
-		"The name of the CSD service to use.")
-
 	fs.Var(
 		&args.grpcMetadata,
-		"grpcMetadata",
-		"gRPC metadata to send.")
+		"md",
+		"Freeform gRPC metadata")
 
 	version := defaultVersion
 	if v := os.Getenv("CSI_VERSION"); v != "" {
