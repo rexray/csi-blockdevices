@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	nodeEnvVar = "BDPLUGIN_NODEONLY"
-	ctlrEnvVar = "BDPLUGIN_CONTROLLERONLY"
+	nodeEnvVar = "X_CSI_BD_NODEONLY"
+	ctlrEnvVar = "X_CSI_BDCONTROLLERONLY"
 )
 
 var (

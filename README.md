@@ -45,11 +45,11 @@ INFO[0000] .Serve                                        name=csi-blockdevices
 Use ctrl-C to exit.
 
 You can enable debug logging (all logging goes to stdout) by setting the
-`BDPLUGIN_DEBUG` env var. It doesn't matter what value you set it to, just that
+`X_CSI_BD_DEBUG` env var. It doesn't matter what value you set it to, just that
 it is set. For example:
 
 ```sh
-$ BDPLUGIN_DEBUG= ./csi-blockdevices
+$ X_CSI_BD_DEBUG= ./csi-blockdevices
 INFO[0000] .Serve                                        name=csi-blockdevices
 DEBU[0000] Added Controller Service
 DEBU[0000] Added Node Service
@@ -61,10 +61,10 @@ For reference, the available env vars are:
 | name | purpose | default |
 | - | - | - |
 | CSI_ENDPOINT | Set path to UNIX domain socket file | n/a |
-| BDPLUGIN_DEBUG | enable debug logging to stdout | n/a |
-| BDPLUGIN_NODEONLY | Only run the Node Service (no Controller service) | n/a |
-| BDPLUGIN_CONTROLLERONLY | Only run the Controller Service (no Node service) | n/a |
-| BDPLUGIN_DEVDIR | Directory to search for available block devices | `/dev/disk/csi-blockdevices` |
+| X_CSI_BD_DEBUG | enable debug logging to stdout | n/a |
+| X_CSI_BD_NODEONLY | Only run the Node Service (no Controller service) | n/a |
+| X_CSI_BD_CONTROLLERONLY | Only run the Controller Service (no Node service) | n/a |
+| X_CSI_BD_DEVDIR | Directory to search for available block devices | `/dev/disk/csi-blockdevices` |
 
 Note that the Identity service is required to always be running, and that the
 default behavior is to also run both the Controller and the Node service
