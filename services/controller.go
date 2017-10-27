@@ -1,28 +1,16 @@
 package services
 
 import (
-	"strconv"
-	"strings"
-
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/thecodeteam/gocsi"
 	"github.com/thecodeteam/gocsi/csi"
-	"github.com/thecodeteam/gocsi/mount"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/thecodeteam/csi-blockdevices/block"
 )
 
-const (
-	// GRPCMetadataTargetPaths is the key in gRPC metatdata that is set
-	// to "true" if a ListVolumes RPC should return VolumeInfo objects
-	// with associated mount path information.
-	GRPCMetadataTargetPaths = "rexray.docker2csi.targetpaths"
-)
-
-func (s *StoragePlugin) ControllerGetCapabilities(
+func (s *storagePlugin) ControllerGetCapabilities(
 	ctx context.Context,
 	in *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
 
@@ -43,7 +31,7 @@ func (s *StoragePlugin) ControllerGetCapabilities(
 	}, nil
 }
 
-func (s *StoragePlugin) CreateVolume(
+func (s *storagePlugin) CreateVolume(
 	ctx context.Context,
 	in *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 
@@ -52,7 +40,7 @@ func (s *StoragePlugin) CreateVolume(
 		"CreateVolume not valid for Block Devices"), nil
 }
 
-func (s *StoragePlugin) DeleteVolume(
+func (s *storagePlugin) DeleteVolume(
 	ctx context.Context,
 	in *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 
@@ -61,7 +49,7 @@ func (s *StoragePlugin) DeleteVolume(
 		"DeleteVolume not valid for Block Devices"), nil
 }
 
-func (s *StoragePlugin) ControllerPublishVolume(
+func (s *storagePlugin) ControllerPublishVolume(
 	ctx context.Context,
 	in *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 
@@ -70,7 +58,7 @@ func (s *StoragePlugin) ControllerPublishVolume(
 		"ControllerPublishVolume not valid for Block Devices"), nil
 }
 
-func (s *StoragePlugin) ControllerUnpublishVolume(
+func (s *storagePlugin) ControllerUnpublishVolume(
 	ctx context.Context,
 	in *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 
@@ -79,7 +67,7 @@ func (s *StoragePlugin) ControllerUnpublishVolume(
 		"ControllerUnpublishVolume not valid for Block Devices"), nil
 }
 
-func (s *StoragePlugin) ValidateVolumeCapabilities(
+func (s *storagePlugin) ValidateVolumeCapabilities(
 	ctx context.Context,
 	in *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 
@@ -169,17 +157,9 @@ func (s *StoragePlugin) ValidateVolumeCapabilities(
 	return r, nil
 }
 
-func (s *StoragePlugin) ListVolumes(
+func (s *storagePlugin) ListVolumes(
 	ctx context.Context,
 	in *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-
-	// Check to see if mount path information should be returned.
-	var isMountInfoRequested bool
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if v, ok := md[GRPCMetadataTargetPaths]; ok && len(v) > 0 {
-			isMountInfoRequested, _ = strconv.ParseBool(v[0])
-		}
-	}
 
 	vols, err := block.ListDevices(s.DevDir)
 	if err != nil {
@@ -188,26 +168,8 @@ func (s *StoragePlugin) ListVolumes(
 			err.Error()), nil
 	}
 
-	mnts, err := mount.GetMounts()
-	if err != nil {
-		return gocsi.ErrListVolumes(
-			csi.Error_GeneralError_UNDEFINED,
-			err.Error()), nil
-	}
-
 	entries := []*csi.ListVolumesResponse_Result_Entry{}
 	for _, v := range vols {
-		// Find all places where device is mounted
-		tps := []string{}
-		for _, m := range mnts {
-			if m.Source == v.RealDev && m.Device == "devtmpfs" {
-				tps = append(tps, m.Path)
-				continue
-			}
-			if m.Device == v.RealDev && !strings.HasPrefix(m.Path, s.privDir) {
-				tps = append(tps, m.Path)
-			}
-		}
 		vi := &csi.VolumeInfo{
 			Id: &csi.VolumeID{
 				Values: map[string]string{
@@ -215,13 +177,6 @@ func (s *StoragePlugin) ListVolumes(
 				},
 			},
 			CapacityBytes: v.Capacity,
-		}
-		if isMountInfoRequested {
-			vi.Metadata = &csi.VolumeMetadata{
-				Values: map[string]string{
-					"targetpaths": strings.Join(tps, ","),
-				},
-			}
 		}
 		entries = append(entries,
 			&csi.ListVolumesResponse_Result_Entry{
@@ -239,7 +194,7 @@ func (s *StoragePlugin) ListVolumes(
 	}, nil
 }
 
-func (s *StoragePlugin) GetCapacity(
+func (s *storagePlugin) GetCapacity(
 	ctx context.Context,
 	in *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
 

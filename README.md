@@ -1,16 +1,15 @@
-CSI-BlockDevices
+CSI-BlockDevices [![Build Status](http://travis-ci.org/thecodeteam/csi-blockdevices.svg?branch=master)](https://travis-ci.org/thecodeteam/csi-blockdevices)
 -------
-
-CSI-BlockDevices is an implementation of a
-[CSI](https://github.com/container-storage-interface) plugin for locally
+CSI-BlockDevices is a Container Storage Interface
+([CSI](https://github.com/container-storage-interface/spec)) plugin for locally
 attached block devices. Block devices can be exposed to the plugin by
 symlinking them into a directory, by default `/dev/disk/csi-blockdevices`. See
-sample commands for details
+sample commands for details.
 
-It is structured such that it can be compiled into a standalone golang binary
-that can be executed to meet the requirements of a CSI plugin. Furthermore, the
-core block and mount logic is separated into a `block` go package that can be
-imported for use by other programs.
+This project may be compiled as a stand-alone binary using Golang that,
+when run, provides a valid CSI endpoint. This project can also be
+vendored or built as a Golang plug-in in order to extend the functionality
+of other programs.
 
 Installation
 -------------
@@ -101,24 +100,24 @@ $ cd /dev/disk/csi-blockdevices
 $ dd if=/dev/zero of=test.img bs=1024 count=102400 #makes 100MiB disk image
 $ losetup /dev/loop0 test.img #attaches disk image to /dev/loop0
 $ ln -s /dev/loop0 # creates symlink named loop0 -> /dev/loop0
-$ csc ls
+$ csc ls -version 0.0.0
 name=loop0
-$ mkdir /mnt/test
-$ mkdir /mnt/test2
-$ csc mnt -mode 1 -t xfs -targetPath /mnt/test id=loop0
+$ touch /mnt/test
+$ touch /mnt/test2
+$ csc mnt -version 0.0.0 -mode 1 -t xfs -targetPath /mnt/test id=loop0
 $ cat /proc/mounts | grep loop
 /dev/loop0 /dev/disk/csi-blockdevices/.mounts/loop0 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
-$ csc mnt -mode 1 -t xfs -targetPath /mnt/test2 id=loop0
+$ csc mnt -version 0.0.0 -mode 1 -t xfs -targetPath /mnt/test2 id=loop0
 $ cat /proc/mounts | grep loop
 /dev/loop0 /dev/disk/csi-blockdevices/.mounts/loop0 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test2 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
-$ csc umount -targetPath /mnt/test id=loop0
+$ csc umount -version 0.0.0 -targetPath /mnt/test id=loop0
 $ cat /proc/mounts | grep loop
 /dev/loop0 /dev/disk/csi-blockdevices/.mounts/loop0 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
 /dev/loop0 /mnt/test2 xfs rw,seclabel,relatime,attr2,inode64,noquota 0 0
-$ csc umount -targetPath /mnt/test2 id=loop0
+$ csc umount -version 0.0.0 -targetPath /mnt/test2 id=loop0
 $ cat /proc/mounts | grep loop
 $
 ```

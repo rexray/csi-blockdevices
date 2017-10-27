@@ -5,16 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+	"golang.org/x/net/context"
+
 	"github.com/thecodeteam/gocsi"
 	"github.com/thecodeteam/gocsi/csi"
 	"github.com/thecodeteam/gocsi/mount"
-	log "github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
 
 	"github.com/thecodeteam/csi-blockdevices/block"
 )
 
-func (s *StoragePlugin) NodePublishVolume(
+func (s *storagePlugin) NodePublishVolume(
 	ctx context.Context,
 	in *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 
@@ -67,7 +68,7 @@ func (s *StoragePlugin) NodePublishVolume(
 		"No supported volume type received"), nil
 }
 
-func (s *StoragePlugin) NodeUnpublishVolume(
+func (s *storagePlugin) NodeUnpublishVolume(
 	ctx context.Context,
 	in *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 
@@ -135,7 +136,7 @@ func (s *StoragePlugin) NodeUnpublishVolume(
 	}, nil
 }
 
-func (s *StoragePlugin) GetNodeID(
+func (s *storagePlugin) GetNodeID(
 	ctx context.Context,
 	in *csi.GetNodeIDRequest) (*csi.GetNodeIDResponse, error) {
 
@@ -148,7 +149,7 @@ func (s *StoragePlugin) GetNodeID(
 	}, nil
 }
 
-func (s *StoragePlugin) ProbeNode(
+func (s *storagePlugin) ProbeNode(
 	ctx context.Context,
 	in *csi.ProbeNodeRequest) (*csi.ProbeNodeResponse, error) {
 
@@ -165,7 +166,7 @@ func (s *StoragePlugin) ProbeNode(
 	}, nil
 }
 
-func (s *StoragePlugin) NodeGetCapabilities(
+func (s *storagePlugin) NodeGetCapabilities(
 	ctx context.Context,
 	in *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 
@@ -193,7 +194,7 @@ func mkdir(path string) (bool, error) {
 	return false, nil
 }
 
-func (s *StoragePlugin) handleMountVolume(
+func (s *storagePlugin) handleMountVolume(
 	dev *block.Device,
 	target string,
 	fs string,
@@ -372,11 +373,11 @@ func (s *StoragePlugin) handleMountVolume(
 	}, nil
 }
 
-func (s *StoragePlugin) getPrivateMountPoint(dev *block.Device) string {
+func (s *storagePlugin) getPrivateMountPoint(dev *block.Device) string {
 	return filepath.Join(s.privDir, dev.Name)
 }
 
-func (s *StoragePlugin) handleBlockVolume(
+func (s *storagePlugin) handleBlockVolume(
 	dev *block.Device,
 	target string) (*csi.NodePublishVolumeResponse, error) {
 
@@ -467,7 +468,7 @@ func (s *StoragePlugin) handleBlockVolume(
 	}, nil
 }
 
-func (s *StoragePlugin) unmountTarget(
+func (s *storagePlugin) unmountTarget(
 	target string) error {
 
 	if err := mount.Unmount(target); err != nil {
@@ -477,7 +478,7 @@ func (s *StoragePlugin) unmountTarget(
 	return nil
 }
 
-func (s *StoragePlugin) unmountPrivMount(
+func (s *storagePlugin) unmountPrivMount(
 	dev *block.Device,
 	target string) error {
 
