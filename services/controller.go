@@ -7,12 +7,12 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/codedellemc/gocsi"
-	"github.com/codedellemc/gocsi/csi"
-	"github.com/codedellemc/gocsi/mount"
+	"github.com/thecodeteam/gocsi"
+	"github.com/thecodeteam/gocsi/csi"
+	"github.com/thecodeteam/gocsi/mount"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/codedellemc/csi-blockdevices/block"
+	"github.com/thecodeteam/csi-blockdevices/block"
 )
 
 const (

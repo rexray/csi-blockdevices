@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/codedellemc/gocsi/csi"
+	"github.com/thecodeteam/gocsi/csi"
 )
 
 const (

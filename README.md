@@ -18,9 +18,9 @@ Installation
 You'll need a working [Go](https://golang.org) installation. From there,
 download and installation is as simple as:
 
-`go get github.com/codedellemc/csi-blockdevices`
+`go get github.com/thecodeteam/csi-blockdevices`
 
-This will download the source to `$GOPATH/src/github.com/codedellemc/csi-blockdevices`,
+This will download the source to `$GOPATH/src/github.com/thecodeteam/csi-blockdevices`,
 and will build install the binary `csi-blockdevices` to `$GOPATH/bin/csi-blockdevices`.
 
 Note that this plugin only works on Linux OS.
@@ -32,7 +32,7 @@ In order to execute the binary, you **must** set the env var `CSI_ENDPOINT`. CSI
 is intended to only run over UNIX domain sockets, so a simple way to set this
 endpoint to a `.sock` file in the same directory as the project is
 
-`export CSI_ENDPOINT=unix://$(go list -f '{{.Dir}}' github.com/codedellemc/csi-blockdevices)/csi.sock`
+`export CSI_ENDPOINT=unix://$(go list -f '{{.Dir}}' github.com/thecodeteam/csi-blockdevices)/csi.sock`
 
 With that in place, you can start the plugin
 (assuming that $GOPATH/bin is in your $PATH):
@@ -74,20 +74,20 @@ Using the plugin
 
 All communication with the plugin is done via gRPC. The easiest way to interact
 with a CSI plugin via CLI is to use the `csc` tool found in
-[GoCSI](https://github.com/codedellemc/gocsi).
+[GoCSI](https://github.com/thecodeteam/gocsi).
 
 You can install this tool with:
 
 ```sh
-go get github.com/codedellemc/gocsi
-go install github.com/codedellemc/gocsi/csc
+go get github.com/thecodeteam/gocsi
+go install github.com/thecodeteam/gocsi/csc
 ```
 
 With $GOPATH/bin in your $PATH, you can issue commands using the `csc` command.
 You will want to use a separate shell from where you are running the `csi-blockdevices`
 binary, and as such you will once again need to do:
 
-`export CSI_ENDPOINT=unix://$(go list -f '{{.Dir}}' github.com/codedellemc/csi-blockdevices)/csi.sock`
+`export CSI_ENDPOINT=unix://$(go list -f '{{.Dir}}' github.com/thecodeteam/csi-blockdevices)/csi.sock`
 
 Here are some sample commands:
 

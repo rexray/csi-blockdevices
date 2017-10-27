@@ -8,13 +8,13 @@ import (
 	"os"
 	"sync"
 
-	"github.com/codedellemc/gocsi"
-	"github.com/codedellemc/gocsi/csi"
-	"github.com/codedellemc/goioc"
+	"github.com/thecodeteam/gocsi"
+	"github.com/thecodeteam/gocsi/csi"
+	"github.com/thecodeteam/goioc"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	"github.com/codedellemc/csi-blockdevices/services"
+	"github.com/thecodeteam/csi-blockdevices/services"
 )
 
 const (
