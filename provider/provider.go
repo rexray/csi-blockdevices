@@ -26,7 +26,7 @@ func New() gocsi.StoragePluginProvider {
 			gocsi.EnvVarSerialVolAccess + "=true",
 
 			// Enable spec validation
-			gocsi.EnvVarSpecValidation + "=true",
+			gocsi.EnvVarSpecReqValidation + "=true",
 
 			// Provide the list of versions supported by this SP. The
 			// specified versions will be:

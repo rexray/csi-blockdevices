@@ -1,8 +1,12 @@
 package specvalidator
 
 import (
+	"reflect"
+	"regexp"
 	"sync"
 
+	"github.com/golang/protobuf/proto"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -10,7 +14,6 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
-	csierr "github.com/thecodeteam/gocsi/errors"
 	"github.com/thecodeteam/gocsi/utils"
 )
 
@@ -20,6 +23,8 @@ type Option func(*opts)
 type opts struct {
 	sync.Mutex
 	supportedVersions   []csi.Version
+	reqValidation       bool
+	repValidation       bool
 	requiresNodeID      bool
 	requiresPubVolInfo  bool
 	requiresVolAttribs  bool
@@ -41,6 +46,20 @@ func (o *opts) requireCredentials(m string) {
 func WithSupportedVersions(versions ...csi.Version) Option {
 	return func(o *opts) {
 		o.supportedVersions = versions
+	}
+}
+
+// WithRequestValidation is a Option that enables request validation.
+func WithRequestValidation() Option {
+	return func(o *opts) {
+		o.reqValidation = true
+	}
+}
+
+// WithResponseValidation is a Option that enables response validation.
+func WithResponseValidation() Option {
+	return func(o *opts) {
+		o.repValidation = true
 	}
 }
 
@@ -190,14 +209,16 @@ func (s *interceptor) handle(
 		return next()
 	}
 
-	// Validate the request version.
-	if err := s.validateRequestVersion(ctx, req); err != nil {
-		return nil, err
-	}
+	if s.opts.reqValidation {
+		// Validate the request version.
+		if err := s.validateRequestVersion(ctx, req); err != nil {
+			return nil, err
+		}
 
-	// Validate the request against the CSI specification.
-	if err := s.validateRequest(ctx, method, req); err != nil {
-		return nil, err
+		// Validate the request against the CSI specification.
+		if err := s.validateRequest(ctx, method, req); err != nil {
+			return nil, err
+		}
 	}
 
 	// Use the function passed into this one to get the response. On the
@@ -220,9 +241,41 @@ func (s *interceptor) handle(
 		return nil, nil
 	}
 
-	// Validate the response against the CSI specification.
-	if err := s.validateResponse(ctx, method, rep); err != nil {
-		return rep, err
+	log.WithField(
+		"repValidation", s.opts.repValidation).Debug("do rep validtion?")
+	if s.opts.repValidation {
+		// Validate the response against the CSI specification.
+		if err := s.validateResponse(ctx, method, rep); err != nil {
+
+			// If an error occurred while validating the response, it is
+			// imperative the response not be discarded as it could be
+			// important to the client.
+			st, ok := status.FromError(err)
+			if !ok {
+				st = status.New(codes.Internal, err.Error())
+			}
+
+			// Add the response to the error details.
+			st, err2 := st.WithDetails(rep.(proto.Message))
+
+			// If there is a problem encoding the response into the
+			// protobuf details then err on the side of caution, log
+			// the encoding error, validation error, and return the
+			// original response.
+			if err2 != nil {
+				log.WithFields(map[string]interface{}{
+					"encErr": err2,
+					"valErr": err,
+				}).Error("failed to encode error details; " +
+					"returning invalid response")
+
+				return rep, nil
+			}
+
+			// There was no issue encoding the response, so return
+			// the gRPC status error with the error message and payload.
+			return nil, st.Err()
+		}
 	}
 
 	return rep, err
@@ -253,11 +306,17 @@ func (s *interceptor) validateRequest(
 		return nil
 	}
 
+	// Validate field sizes.
+	if err := validateFieldSizes(req); err != nil {
+		return err
+	}
+
 	// Check to see if the request has a volume ID and if it is set.
 	// If the volume ID is not set then return an error.
 	if treq, ok := req.(interceptorHasVolumeID); ok {
 		if treq.GetVolumeId() == "" {
-			return csierr.ErrVolumeIDRequired
+			return status.Error(
+				codes.InvalidArgument, "required: VolumeID")
 		}
 	}
 
@@ -266,7 +325,8 @@ func (s *interceptor) validateRequest(
 	if s.opts.requiresNodeID {
 		if treq, ok := req.(interceptorHasNodeID); ok {
 			if treq.GetNodeId() == "" {
-				return csierr.ErrNodeIDRequired
+				return status.Error(
+					codes.InvalidArgument, "required: NodeID")
 			}
 		}
 	}
@@ -277,7 +337,8 @@ func (s *interceptor) validateRequest(
 	if _, ok := s.opts.requiresCredentials[method]; ok {
 		if treq, ok := req.(interceptorHasUserCredentials); ok {
 			if len(treq.GetUserCredentials()) == 0 {
-				return csierr.ErrUserCredentialsRequired
+				return status.Error(
+					codes.InvalidArgument, "required: UserCredentials")
 			}
 		}
 	}
@@ -288,7 +349,8 @@ func (s *interceptor) validateRequest(
 	if s.opts.requiresVolAttribs {
 		if treq, ok := req.(interceptorHasVolumeAttributes); ok {
 			if len(treq.GetVolumeAttributes()) == 0 {
-				return csierr.ErrVolumeAttributesRequired
+				return status.Error(
+					codes.InvalidArgument, "required: VolumeAttributes")
 			}
 		}
 	}
@@ -326,8 +388,13 @@ func (s *interceptor) validateResponse(
 	method string,
 	rep interface{}) error {
 
-	if rep == nil {
+	if utils.IsNilResponse(method, rep) {
 		return nil
+	}
+
+	// Validate the field sizes.
+	if err := validateFieldSizes(rep); err != nil {
+		return err
 	}
 
 	switch tobj := rep.(type) {
@@ -381,8 +448,7 @@ func (s *interceptor) validateRequestVersion(
 	)
 
 	if requestVersion == nil {
-		return status.Error(
-			codes.InvalidArgument, "invalid request version: nil")
+		return status.Error(codes.InvalidArgument, "nil: Version")
 	}
 
 	for _, supportedVersion := range s.opts.supportedVersions {
@@ -395,7 +461,7 @@ func (s *interceptor) validateRequestVersion(
 	if !supported {
 		return status.Errorf(
 			codes.InvalidArgument,
-			"invalid request version: %s",
+			"invalid: Version=%s",
 			utils.SprintfVersion(*requestVersion))
 	}
 
@@ -407,7 +473,8 @@ func (s *interceptor) validateCreateVolumeRequest(
 	req csi.CreateVolumeRequest) error {
 
 	if req.Name == "" {
-		return csierr.ErrVolumeNameRequired
+		return status.Error(
+			codes.InvalidArgument, "required: Name")
 	}
 
 	return validateVolumeCapabilitiesArg(req.VolumeCapabilities, true)
@@ -446,11 +513,13 @@ func (s *interceptor) validateNodePublishVolumeRequest(
 	req csi.NodePublishVolumeRequest) error {
 
 	if req.TargetPath == "" {
-		return csierr.ErrTargetPathRequired
+		return status.Error(
+			codes.InvalidArgument, "required: TargetPath")
 	}
 
 	if s.opts.requiresPubVolInfo && len(req.PublishVolumeInfo) == 0 {
-		return csierr.ErrPublishVolumeInfoRequired
+		return status.Error(
+			codes.InvalidArgument, "required: PublishVolumeInfo")
 	}
 
 	return validateVolumeCapabilityArg(req.VolumeCapability, true)
@@ -461,7 +530,8 @@ func (s *interceptor) validateNodeUnpublishVolumeRequest(
 	req csi.NodeUnpublishVolumeRequest) error {
 
 	if req.TargetPath == "" {
-		return csierr.ErrTargetPathRequired
+		return status.Error(
+			codes.InvalidArgument, "required: TargetPath")
 	}
 
 	return nil
@@ -472,15 +542,16 @@ func (s *interceptor) validateCreateVolumeResponse(
 	rep csi.CreateVolumeResponse) error {
 
 	if rep.VolumeInfo == nil {
-		return csierr.ErrNilVolumeInfo
+		return status.Error(codes.Internal, "nil: VolumeInfo")
 	}
 
 	if rep.VolumeInfo.Id == "" {
-		return csierr.ErrEmptyVolumeID
+		return status.Error(codes.Internal, "empty: VolumeInfo.Id")
 	}
 
 	if s.opts.requiresVolAttribs && len(rep.VolumeInfo.Attributes) == 0 {
-		return csierr.ErrNonNilEmptyAttribs
+		return status.Error(
+			codes.Internal, "non-nil, empty: VolumeInfo.Attributes")
 	}
 
 	return nil
@@ -491,7 +562,7 @@ func (s *interceptor) validateControllerPublishVolumeResponse(
 	rep csi.ControllerPublishVolumeResponse) error {
 
 	if s.opts.requiresPubVolInfo && len(rep.PublishVolumeInfo) == 0 {
-		return csierr.ErrEmptyPublishVolumeInfo
+		return status.Error(codes.Internal, "empty: PublishVolumeInfo")
 	}
 	return nil
 }
@@ -505,17 +576,17 @@ func (s *interceptor) validateListVolumesResponse(
 		if volInfo == nil {
 			return status.Errorf(
 				codes.Internal,
-				"volumeInfo is nil: index=%d", i)
+				"nil: Entries[%d].VolumeInfo", i)
 		}
 		if volInfo.Id == "" {
 			return status.Errorf(
 				codes.Internal,
-				"volumeInfo.Id is empty: index=%d", i)
+				"empty: Entries[%d].VolumeInfo.Id", i)
 		}
 		if volInfo.Attributes != nil && len(volInfo.Attributes) == 0 {
 			return status.Errorf(
 				codes.Internal,
-				"volumeInfo.Attributes is not nil & empty: index=%d", i)
+				"non-nil, empty: Entries[%d].VolumeInfo.Attributes", i)
 		}
 	}
 
@@ -527,7 +598,7 @@ func (s *interceptor) validateControllerGetCapabilitiesResponse(
 	rep csi.ControllerGetCapabilitiesResponse) error {
 
 	if rep.Capabilities != nil && len(rep.Capabilities) == 0 {
-		return csierr.ErrNonNilControllerCapabilities
+		return status.Error(codes.Internal, "non-nil, empty: Capabilities")
 	}
 	return nil
 }
@@ -537,23 +608,55 @@ func (s *interceptor) validateGetSupportedVersionsResponse(
 	rep csi.GetSupportedVersionsResponse) error {
 
 	if len(rep.SupportedVersions) == 0 {
-		return csierr.ErrEmptySupportedVersions
+		return status.Error(codes.Internal, "empty: SupportedVersions")
 	}
 	return nil
 }
+
+const (
+	pluginNameMax           = 63
+	pluginNamePatt          = `^[\w\d]+\.[\w\d\.\-_]*[\w\d]$`
+	pluginVendorVersionPatt = `^v?(\d+\.){2}(\d+)(-.+)?$`
+)
 
 func (s *interceptor) validateGetPluginInfoResponse(
 	ctx context.Context,
 	rep csi.GetPluginInfoResponse) error {
 
+	log.Debug("validateGetPluginInfoResponse: enter")
+
 	if rep.Name == "" {
-		return csierr.ErrEmptyPluginName
+		return status.Error(codes.Internal, "empty: Name")
+	}
+	if l := len(rep.Name); l > pluginNameMax {
+		return status.Errorf(codes.Internal,
+			"exceeds size limit: Name=%s: max=%d, size=%d",
+			rep.Name, pluginNameMax, l)
+	}
+	nok, err := regexp.MatchString(pluginNamePatt, rep.Name)
+	if err != nil {
+		return err
+	}
+	if !nok {
+		return status.Errorf(codes.Internal,
+			"invalid: Name=%s: patt=%s",
+			rep.Name, pluginNamePatt)
 	}
 	if rep.VendorVersion == "" {
-		return csierr.ErrEmptyVendorVersion
+		return status.Error(codes.Internal, "empty: VendorVersion")
+	}
+	vok, err := regexp.MatchString(pluginVendorVersionPatt, rep.VendorVersion)
+	if err != nil {
+		return err
+	}
+	if !vok {
+		return status.Errorf(codes.Internal,
+			"invalid: VendorVersion=%s: patt=%s",
+			rep.VendorVersion, pluginVendorVersionPatt)
 	}
 	if rep.Manifest != nil && len(rep.Manifest) == 0 {
-		return csierr.ErrNonNilEmptyPluginManifest
+		return status.Error(codes.Internal,
+			"non-nil, empty: Manifest")
 	}
 	return nil
 }
@@ -563,7 +666,7 @@ func (s *interceptor) validateGetNodeIDResponse(
 	rep csi.GetNodeIDResponse) error {
 
 	if s.opts.requiresNodeID && rep.NodeId == "" {
-		return csierr.ErrEmptyNodeID
+		return status.Error(codes.Internal, "empty: NodeID")
 	}
 	return nil
 }
@@ -573,7 +676,7 @@ func (s *interceptor) validateNodeGetCapabilitiesResponse(
 	rep csi.NodeGetCapabilitiesResponse) error {
 
 	if rep.Capabilities != nil && len(rep.Capabilities) == 0 {
-		return csierr.ErrNonNilNodeCapabilities
+		return status.Error(codes.Internal, "non-nil, empty: Capabilities")
 	}
 	return nil
 }
@@ -583,31 +686,32 @@ func validateVolumeCapabilityArg(
 	required bool) error {
 
 	if required && volCap == nil {
-		return csierr.ErrVolumeCapabilityRequired
+		return status.Error(codes.InvalidArgument, "required: VolumeCapability")
 	}
 
 	if volCap.AccessMode == nil {
-		return csierr.ErrAccessModeRequired
+		return status.Error(codes.InvalidArgument, "required: AccessMode")
 	}
 
 	atype := volCap.GetAccessType()
 	if atype == nil {
-		return csierr.ErrAccessTypeRequired
+		return status.Error(codes.InvalidArgument, "required: AccessType")
 	}
 
 	switch tatype := atype.(type) {
 	case *csi.VolumeCapability_Block:
 		if tatype.Block == nil {
-			return csierr.ErrBlockTypeRequired
+			return status.Error(codes.InvalidArgument,
+				"required: AccessType.Block")
 		}
 	case *csi.VolumeCapability_Mount:
 		if tatype.Mount == nil {
-			return csierr.ErrMountTypeRequired
+			return status.Error(codes.InvalidArgument,
+				"required: AccessType.Mount")
 		}
 	default:
-		return status.Errorf(
-			codes.InvalidArgument,
-			"invalid access type: %T", atype)
+		return status.Errorf(codes.InvalidArgument,
+			"invalid: AccessType=%T", atype)
 	}
 
 	return nil
@@ -619,7 +723,8 @@ func validateVolumeCapabilitiesArg(
 
 	if len(volCaps) == 0 {
 		if required {
-			return csierr.ErrVolumeCapabilitiesRequired
+			return status.Error(
+				codes.InvalidArgument, "required: VolumeCapabilities")
 		}
 		return nil
 	}
@@ -628,33 +733,91 @@ func validateVolumeCapabilitiesArg(
 		if cap.AccessMode == nil {
 			return status.Errorf(
 				codes.InvalidArgument,
-				"access mode required: index %d", i)
+				"required: VolumeCapabilities[%d].AccessMode", i)
 		}
 		atype := cap.GetAccessType()
 		if atype == nil {
 			return status.Errorf(
 				codes.InvalidArgument,
-				"access type: index %d required", i)
+				"required: VolumeCapabilities[%d].AccessType", i)
 		}
 		switch tatype := atype.(type) {
 		case *csi.VolumeCapability_Block:
 			if tatype.Block == nil {
 				return status.Errorf(
 					codes.InvalidArgument,
-					"block type: index %d required", i)
+					"required: VolumeCapabilities[%d].AccessType.Block", i)
+
 			}
 		case *csi.VolumeCapability_Mount:
 			if tatype.Mount == nil {
 				return status.Errorf(
 					codes.InvalidArgument,
-					"mount type: index %d required", i)
+					"required: VolumeCapabilities[%d].AccessType.Mount", i)
 			}
 		default:
 			return status.Errorf(
 				codes.InvalidArgument,
-				"invalid access type: index %d, type=%T", i, atype)
+				"invalid: VolumeCapabilities[%d].AccessType=%T", i, atype)
 		}
 	}
 
+	return nil
+}
+
+const (
+	maxFieldString = 128
+	maxFieldMap    = 4096
+)
+
+func validateFieldSizes(msg interface{}) error {
+	rv := reflect.ValueOf(msg).Elem()
+	tv := rv.Type()
+	nf := tv.NumField()
+	for i := 0; i < nf; i++ {
+		f := rv.Field(i)
+		switch f.Kind() {
+		case reflect.String:
+			if l := f.Len(); l > maxFieldString {
+				return status.Errorf(
+					codes.InvalidArgument,
+					"exceeds size limit: %s: max=%d, size=%d",
+					tv.Field(i).Name, maxFieldString, l)
+			}
+		case reflect.Map:
+			if f.Len() == 0 {
+				continue
+			}
+			size := 0
+			for _, k := range f.MapKeys() {
+				if k.Kind() == reflect.String {
+					kl := k.Len()
+					if kl > maxFieldString {
+						return status.Errorf(
+							codes.InvalidArgument,
+							"exceeds size limit: %s[%s]: max=%d, size=%d",
+							tv.Field(i).Name, k.String(), maxFieldString, kl)
+					}
+					size = size + kl
+				}
+				if v := f.MapIndex(k); v.Kind() == reflect.String {
+					vl := v.Len()
+					if vl > maxFieldString {
+						return status.Errorf(
+							codes.InvalidArgument,
+							"exceeds size limit: %s[%s]=: max=%d, size=%d",
+							tv.Field(i).Name, k.String(), maxFieldString, vl)
+					}
+					size = size + vl
+				}
+			}
+			if size > maxFieldMap {
+				return status.Errorf(
+					codes.InvalidArgument,
+					"exceeds size limit: %s: max=%d, size=%d",
+					tv.Field(i).Name, maxFieldMap, size)
+			}
+		}
+	}
 	return nil
 }

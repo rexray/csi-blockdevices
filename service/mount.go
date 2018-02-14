@@ -11,7 +11,6 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	log "github.com/sirupsen/logrus"
-	csierr "github.com/thecodeteam/gocsi/errors"
 	"github.com/thecodeteam/gofsutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -175,19 +174,22 @@ func publishVolume(
 
 	target := req.GetTargetPath()
 	if target == "" {
-		return csierr.ErrTargetPathRequired
+		return status.Error(codes.InvalidArgument,
+			"target_path is required")
 	}
 
 	ro := req.GetReadonly()
 
 	volCap := req.GetVolumeCapability()
 	if volCap == nil {
-		return csierr.ErrVolumeCapabilityRequired
+		return status.Errorf(codes.InvalidArgument,
+			"volume capability required")
 	}
 
 	accMode := volCap.GetAccessMode()
 	if accMode == nil {
-		return csierr.ErrAccessModeRequired
+		return status.Errorf(codes.InvalidArgument,
+			"access mode required")
 	}
 
 	// make sure device is valid
@@ -243,7 +245,8 @@ func publishVolume(
 		typeSet = true
 	}
 	if !typeSet {
-		return csierr.ErrAccessTypeRequired
+		return status.Errorf(codes.InvalidArgument,
+			"access type required")
 	}
 
 	// check that target is right type for vol type
@@ -493,7 +496,8 @@ func unpublishVolume(
 
 	target := req.GetTargetPath()
 	if target == "" {
-		return csierr.ErrTargetPathRequired
+		return status.Error(codes.InvalidArgument,
+			"target_path is required")
 	}
 
 	// make sure device is valid

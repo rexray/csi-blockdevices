@@ -2,9 +2,15 @@
 # download the dep binary.
 /dep
 /.dep/
+/vendor/github.com/golang/dep
 
 # The ginkgo test binary
 /ginkgo
+
+# The etcd binary, log, and default data directory
+/etcd
+/etcd.log
+default.etcd
 
 # The archives built from this package.
 /*.a
