@@ -200,6 +200,11 @@ func publishVolume(
 			id, err.Error())
 	}
 
+	// make sure privDir exists and is a directory
+	if _, err := mkdir(privDir); err != nil {
+		return err
+	}
+
 	// make sure target is created
 	tgtStat, err := os.Stat(target)
 	if err != nil {
@@ -209,21 +214,6 @@ func publishVolume(
 		}
 		return status.Errorf(codes.Internal,
 			"failed to stat target, err: %s", err.Error())
-	}
-
-	// make sure privDir exists and is a directory
-	privDirStat, err := os.Stat(privDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return status.Errorf(codes.Internal,
-				"plugin private dir: %s not pre-created", privDir)
-		}
-		return status.Errorf(codes.Internal,
-			"failed to stat private dir, err: %s", err.Error())
-	}
-	if !privDirStat.IsDir() {
-		return status.Errorf(codes.Internal,
-			"private dir: %s is not a directory", privDir)
 	}
 
 	isBlock := false
