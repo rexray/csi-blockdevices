@@ -14,15 +14,22 @@ of other programs.
 Installation
 -------------
 
-You'll need a working [Go](https://golang.org) installation. From there,
-download and installation is as simple as:
+CSI-BlockDevices can be installed with Go and the following command:
 
-`go get github.com/thecodeteam/csi-blockdevices`
+`$ go get github.com/thecodeteam/csi-blockdevices`
 
-This will download the source to `$GOPATH/src/github.com/thecodeteam/csi-blockdevices`,
-and will build install the binary `csi-blockdevices` to `$GOPATH/bin/csi-blockdevices`.
+The resulting binary will be installed to `$GOPATH/bin/csi-blockdevices`.
 
-Note that this plugin only works on Linux OS.
+If you want to build `csi-nblockdevices` with accurate version information,
+you'll need to run the `go generate` command and build again:
+
+```bash
+$ go get github.com/thecodeteam/csi-blockdevices
+$ cd $GOPATH/src/github.com/thecodeteam/csi-blockdevices
+$ go generate && go install
+```
+
+The binary will once again be installed to `$GOPATH/bin/csi-blockdevices`.
 
 Starting the plugin
 -------------------
