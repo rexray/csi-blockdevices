@@ -9,7 +9,7 @@ dist: trusty
 
 # Select Go as the language used to run the buid.
 language: go
-go: 1.8.3
+go: 1.9.4
 go_import_path: github.com/thecodeteam/gocsi
 
 jobs:
@@ -43,9 +43,3 @@ jobs:
         env:     JOB=test
         install: make ginkgo
         script:  make test
-
-      # Benchmark GoCSI's PipeConn
-      - stage:   test
-        env:     JOB=bench
-        install: true
-        script:  make bench

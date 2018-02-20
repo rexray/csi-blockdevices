@@ -11,7 +11,6 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	log "github.com/sirupsen/logrus"
-	csierr "github.com/thecodeteam/gocsi/errors"
 	"github.com/thecodeteam/gofsutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -175,19 +174,22 @@ func publishVolume(
 
 	target := req.GetTargetPath()
 	if target == "" {
-		return csierr.ErrTargetPathRequired
+		return status.Error(codes.InvalidArgument,
+			"target_path is required")
 	}
 
 	ro := req.GetReadonly()
 
 	volCap := req.GetVolumeCapability()
 	if volCap == nil {
-		return csierr.ErrVolumeCapabilityRequired
+		return status.Errorf(codes.InvalidArgument,
+			"volume capability required")
 	}
 
 	accMode := volCap.GetAccessMode()
 	if accMode == nil {
-		return csierr.ErrAccessModeRequired
+		return status.Errorf(codes.InvalidArgument,
+			"access mode required")
 	}
 
 	// make sure device is valid
@@ -196,6 +198,11 @@ func publishVolume(
 		return status.Errorf(codes.Internal,
 			"error getting block device for volume: %s, err: %s",
 			id, err.Error())
+	}
+
+	// make sure privDir exists and is a directory
+	if _, err := mkdir(privDir); err != nil {
+		return err
 	}
 
 	// make sure target is created
@@ -207,21 +214,6 @@ func publishVolume(
 		}
 		return status.Errorf(codes.Internal,
 			"failed to stat target, err: %s", err.Error())
-	}
-
-	// make sure privDir exists and is a directory
-	privDirStat, err := os.Stat(privDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return status.Errorf(codes.Internal,
-				"plugin private dir: %s not pre-created", privDir)
-		}
-		return status.Errorf(codes.Internal,
-			"failed to stat private dir, err: %s", err.Error())
-	}
-	if !privDirStat.IsDir() {
-		return status.Errorf(codes.Internal,
-			"private dir: %s is not a directory", privDir)
 	}
 
 	isBlock := false
@@ -243,7 +235,8 @@ func publishVolume(
 		typeSet = true
 	}
 	if !typeSet {
-		return csierr.ErrAccessTypeRequired
+		return status.Errorf(codes.InvalidArgument,
+			"access type required")
 	}
 
 	// check that target is right type for vol type
@@ -493,7 +486,8 @@ func unpublishVolume(
 
 	target := req.GetTargetPath()
 	if target == "" {
-		return csierr.ErrTargetPathRequired
+		return status.Error(codes.InvalidArgument,
+			"target_path is required")
 	}
 
 	// make sure device is valid

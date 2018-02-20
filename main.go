@@ -1,3 +1,5 @@
+//go:generate go generate ./core
+
 package main
 
 import (
@@ -18,4 +20,8 @@ func main() {
 		provider.New())
 }
 
-const usage = ``
+const usage = `    X_CSI_BD_DEVDIR
+        Specifies the path to search for blockdevices made available to this
+        plugin. Devices that should be used by this plugin should be symlink'd
+        in this directory.
+`

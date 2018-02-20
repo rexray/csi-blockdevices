@@ -103,22 +103,31 @@ GLOBAL OPTIONS
         generated using an atomic sequence counter.
 
     X_CSI_SPEC_VALIDATION
-        A flag that enables validation of incoming requests and outgoing
-        responses against the CSI specification.
+        Setting X_CSI_SPEC_VALIDATION=true is the same as:
+            X_CSI_SPEC_REQ_VALIDATION=true
+            X_CSI_SPEC_REP_VALIDATION=true
+
+    X_CSI_SPEC_REQ_VALIDATION
+        A flag that enables the validation of CSI request messages.
+
+    X_CSI_SPEC_REP_VALIDATION
+        A flag that enables the validation of CSI response messages.
+        Invalid responses are marshalled into a gRPC error with a code
+        of "Internal."
 
     X_CSI_REQUIRE_NODE_ID
         A flag that enables treating the following fields as required:
             * ControllerPublishVolumeRequest.NodeId
             * GetNodeIDResponse.NodeId
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_PUB_VOL_INFO
         A flag that enables treating the following fields as required:
             * ControllerPublishVolumeResponse.PublishVolumeInfo
             * NodePublishVolumeRequest.PublishVolumeInfo
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_VOL_ATTRIBS
         A flag that enables treating the following fields as required:
@@ -126,7 +135,7 @@ GLOBAL OPTIONS
             * ValidateVolumeCapabilitiesRequest.VolumeAttributes
             * NodePublishVolumeRequest.VolumeAttributes
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_CREDS
         Setting X_CSI_REQUIRE_CREDS=true is the same as:
@@ -137,43 +146,43 @@ GLOBAL OPTIONS
             X_CSI_REQUIRE_CREDS_NODE_PUB_VOL=true
             X_CSI_REQUIRE_CREDS_NODE_UNPUB_VOL=true
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_CREDS_CREATE_VOL
         A flag that enables treating the following fields as required:
             * CreateVolumeRequest.UserCredentials
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_CREDS_DELETE_VOL
         A flag that enables treating the following fields as required:
             * DeleteVolumeRequest.UserCredentials
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_CREDS_CTRLR_PUB_VOL
         A flag that enables treating the following fields as required:
             * ControllerPublishVolumeRequest.UserCredentials
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_CREDS_CTRLR_UNPUB_VOL
         A flag that enables treating the following fields as required:
             * ControllerUnpublishVolumeRequest.UserCredentials
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_CREDS_NODE_PUB_VOL
         A flag that enables treating the following fields as required:
             * NodePublishVolumeRequest.UserCredentials
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_REQUIRE_CREDS_NODE_UNPUB_VOL
         A flag that enables treating the following fields as required:
             * NodeUnpublishVolumeRequest.UserCredentials
 
-        Enabling this option sets X_CSI_SPEC_VALIDATION=true.
+        Enabling this option sets X_CSI_SPEC_REQ_VALIDATION=true.
 
     X_CSI_SERIAL_VOL_ACCESS
         A flag that enables the serial volume access middleware.
@@ -183,6 +192,67 @@ GLOBAL OPTIONS
         access middleware waits to obtain a lock for the request's volume before
         returning a the gRPC error code FailedPrecondition (5) to indicate
         an operation is already pending for the specified volume.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_DOMAIN
+        The name of the environment variable that defines the etcd lock
+        provider's concurrency domain.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_TTL
+        The length of time etcd will wait before  releasing ownership of a
+        distributed lock if the lock's session has not been renewed.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_ENDPOINTS
+        A comma-separated list of etcd endpoints. If specified then the
+        SP's serial volume access middleware will leverage etcd to enable
+        distributed locking.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_AUTO_SYNC_INTERVAL
+        A time.Duration string that specifies the interval to update
+        endpoints with its latest members. A value of 0 disables
+        auto-sync. By default auto-sync is disabled.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_DIAL_TIMEOUT
+        A time.Duration string that specifies the timeout for failing to
+        establish a connection.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_DIAL_KEEP_ALIVE_TIME
+        A time.Duration string that defines the time after which the client
+        pings the server to see if the transport is alive.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_DIAL_KEEP_ALIVE_TIMEOUT
+        A time.Duration string that defines the time that the client waits for
+        a response for the keep-alive probe. If the response is not received
+        in this time, the connection is closed.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_MAX_CALL_SEND_MSG_SZ
+        Defines the client-side request send limit in bytes. If 0, it defaults
+        to 2.0 MiB (2 * 1024 * 1024). Make sure that "MaxCallSendMsgSize" <
+        server-side default send/recv limit. ("--max-request-bytes" flag to
+        etcd or "embed.Config.MaxRequestBytes").
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_MAX_CALL_RECV_MSG_SZ
+        Defines the client-side response receive limit. If 0, it defaults to
+        "math.MaxInt32", because range response can easily exceed request send
+        limits. Make sure that "MaxCallRecvMsgSize" >= server-side default
+        send/recv limit. ("--max-request-bytes" flag to etcd or
+        "embed.Config.MaxRequestBytes").
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_USERNAME
+        The user name used for authentication.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_PASSWORD
+        The password used for authentication.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_REJECT_OLD_CLUSTER
+        A flag that indicates refusal to create a client against an outdated
+        cluster.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_TLS
+        A flag that indicates the client should attempt a TLS connection.
+
+    X_CSI_SERIAL_VOL_ACCESS_ETCD_TLS_INSECURE
+        A flag that indicates the TLS connection should not verify peer
+        certificates.
 
     X_CSI_PRIVATE_MOUNT_DIR
         Specifies the path of the private mount directory. During a

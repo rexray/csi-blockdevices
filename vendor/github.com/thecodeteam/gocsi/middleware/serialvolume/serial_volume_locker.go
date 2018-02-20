@@ -2,42 +2,41 @@ package serialvolume
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/thecodeteam/gosync"
 	xctx "golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
-	csierr "github.com/thecodeteam/gocsi/errors"
+	mwtypes "github.com/thecodeteam/gocsi/middleware/serialvolume/types"
 )
 
-// VolumeLockerProvider is able to provide gosync.TryLocker objects for
-// volumes by ID and name.
-type VolumeLockerProvider interface {
-	// GetLockWithID gets a lock for a volume with provided ID. If a lock
-	// for the specified volume ID does not exist then a new lock is created
-	// and returned.
-	GetLockWithID(ctx context.Context, id string) (gosync.TryLocker, error)
-
-	// GetLockWithName gets a lock for a volume with provided name. If a lock
-	// for the specified volume name does not exist then a new lock is created
-	// and returned.
-	GetLockWithName(ctx context.Context, name string) (gosync.TryLocker, error)
-}
+const pending = "pending"
 
 // Option configures the interceptor.
 type Option func(*opts)
 
 type opts struct {
 	timeout time.Duration
-	locker  VolumeLockerProvider
+	locker  mwtypes.VolumeLockerProvider
 }
 
 // WithTimeout is an Option that sets the timeout used by the interceptor.
 func WithTimeout(t time.Duration) Option {
 	return func(o *opts) {
 		o.timeout = t
+	}
+}
+
+// WithLockProvider is an Option that sets the lock provider used by the
+// interceptor.
+func WithLockProvider(p mwtypes.VolumeLockerProvider) Option {
+	return func(o *opts) {
+		o.locker = p
 	}
 }
 
@@ -110,8 +109,11 @@ func (i *interceptor) controllerPublishVolume(
 	if err != nil {
 		return nil, err
 	}
+	if closer, ok := lock.(io.Closer); ok {
+		defer closer.Close()
+	}
 	if !lock.TryLock(i.opts.timeout) {
-		return nil, csierr.ErrOpPending
+		return nil, status.Error(codes.Aborted, pending)
 	}
 	defer lock.Unlock()
 
@@ -128,8 +130,11 @@ func (i *interceptor) controllerUnpublishVolume(
 	if err != nil {
 		return nil, err
 	}
+	if closer, ok := lock.(io.Closer); ok {
+		defer closer.Close()
+	}
 	if !lock.TryLock(i.opts.timeout) {
-		return nil, csierr.ErrOpPending
+		return nil, status.Error(codes.Aborted, pending)
 	}
 	defer lock.Unlock()
 
@@ -146,8 +151,11 @@ func (i *interceptor) createVolume(
 	if err != nil {
 		return nil, err
 	}
+	if closer, ok := lock.(io.Closer); ok {
+		defer closer.Close()
+	}
 	if !lock.TryLock(i.opts.timeout) {
-		return nil, csierr.ErrOpPending
+		return nil, status.Error(codes.Aborted, pending)
 	}
 	defer lock.Unlock()
 
@@ -164,8 +172,11 @@ func (i *interceptor) deleteVolume(
 	if err != nil {
 		return nil, err
 	}
+	if closer, ok := lock.(io.Closer); ok {
+		defer closer.Close()
+	}
 	if !lock.TryLock(i.opts.timeout) {
-		return nil, csierr.ErrOpPending
+		return nil, status.Error(codes.Aborted, pending)
 	}
 	defer lock.Unlock()
 
@@ -182,8 +193,11 @@ func (i *interceptor) nodePublishVolume(
 	if err != nil {
 		return nil, err
 	}
+	if closer, ok := lock.(io.Closer); ok {
+		defer closer.Close()
+	}
 	if !lock.TryLock(i.opts.timeout) {
-		return nil, csierr.ErrOpPending
+		return nil, status.Error(codes.Aborted, pending)
 	}
 	defer lock.Unlock()
 
@@ -200,8 +214,11 @@ func (i *interceptor) nodeUnpublishVolume(
 	if err != nil {
 		return nil, err
 	}
+	if closer, ok := lock.(io.Closer); ok {
+		defer closer.Close()
+	}
 	if !lock.TryLock(i.opts.timeout) {
-		return nil, csierr.ErrOpPending
+		return nil, status.Error(codes.Aborted, pending)
 	}
 	defer lock.Unlock()
 

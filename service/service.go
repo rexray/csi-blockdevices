@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"net"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/thecodeteam/gocsi"
 	csictx "github.com/thecodeteam/gocsi/context"
+
+	"github.com/thecodeteam/csi-blockdevices/core"
 )
 
 const (
@@ -18,11 +21,17 @@ const (
 	// SupportedVersions is a list of supported CSI versions
 	SupportedVersions = "0.1.0"
 
-	Version = "0.1.0"
-
 	defaultDevDir  = "/dev/disk/csi-blockdevices"
 	defaultPrivDir = "/dev/disk/csi-bd-private"
 )
+
+// Manifest is the SP's manifest.
+var Manifest = map[string]string{
+	"url":    "https://github.com/thecodeteam/csi-blockdevices",
+	"semver": core.SemVer,
+	"commit": core.CommitSha32,
+	"formed": core.CommitTime.Format(time.RFC1123),
+}
 
 // Service is the CSI Network File System (NFS) service provider.
 type Service interface {
